@@ -50,7 +50,9 @@ Commands
 - /rm <task_name>
   Deletes task permanently.
 - /list
-  Lists all tasks and their configuration.
+  Lists all current tasks and their configuration.
+- /mytasks
+  Lists only tasks created by the user who runs the command.
 
 Project Structure
 - main.py: Entrypoint.

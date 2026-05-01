@@ -12,12 +12,33 @@ from app.monitor import MonitorService
 from app.storage import TaskStorage
 
 
+_MAX_MESSAGE_LENGTH = 4096
+
+
 async def _reply(update: Update, text: str) -> None:
-    """Safely send a text reply when an effective message is available."""
+    """Safely send a text reply, splitting into chunks if needed for Telegram's limit."""
     message = update.effective_message
     if not message:
         return
-    await message.reply_text(text)
+    if len(text) <= _MAX_MESSAGE_LENGTH:
+        await message.reply_text(text)
+        return
+    # Split on newlines to avoid cutting mid-line
+    lines = text.split("\n")
+    chunk: list[str] = []
+    chunk_len = 0
+    for line in lines:
+        # +1 for the newline we'll join with
+        needed = len(line) + (1 if chunk else 0)
+        if chunk_len + needed > _MAX_MESSAGE_LENGTH:
+            await message.reply_text("\n".join(chunk))
+            chunk = [line]
+            chunk_len = len(line)
+        else:
+            chunk.append(line)
+            chunk_len += needed
+    if chunk:
+        await message.reply_text("\n".join(chunk))
 
 
 def _get_user_id(update: Update) -> int | None:
@@ -53,6 +74,7 @@ def register_handlers(application: Application, storage: TaskStorage, monitor: M
     application.add_handler(CommandHandler("stop", stop_command))
     application.add_handler(CommandHandler(["rm", "remove"], remove_command))
     application.add_handler(CommandHandler("list", list_command))
+    application.add_handler(CommandHandler("mytasks", my_tasks_command))
 
 
 def _get_services(context: ContextTypes.DEFAULT_TYPE) -> tuple[TaskStorage, MonitorService]:
@@ -453,7 +475,30 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await _reply(update, "No tasks found.")
         return
 
+    await _reply(update, _format_tasks(tasks, title="All tasks:"))
+
+
+async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Display tasks created by the user who sent the command."""
+    user_id = _get_user_id(update)
+    if user_id is None:
+        return
+
+    storage, _ = _get_services(context)
+    tasks = [task for task in storage.list_tasks() if task["creator_id"] == user_id]
+    if not tasks:
+        await _reply(update, "You have no tasks yet.")
+        return
+
+    await _reply(update, _format_tasks(tasks, title="Your tasks:"))
+
+
+def _format_tasks(tasks: list[dict], title: str | None = None) -> str:
+    """Render tasks as human-readable lines."""
     lines: list[str] = []
+    if title:
+        lines.append(title)
+
     for task in tasks:
         url = task["url"] if task["url"] else "not given"
         keywords = ", ".join(task["keywords"]) if task["keywords"] else "not given"
@@ -466,7 +511,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             f"Price: {price_range} | Interval: {task['interval_minutes']} min | Status: {task['status']}"
         )
 
-    await _reply(update, "\n".join(lines))
+    return "\n".join(lines)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -484,6 +529,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/start <task_name> - Start monitoring a configured task.\n"
         "/stop <task_name> - Stop a running task.\n"
         "/rm <task_name> - Delete a task permanently.\n"
-        "/list - Show all tasks and their current settings.\n"
+        "/list - Show all current tasks and their settings.\n"
+        "/mytasks - Show only tasks you created.\n"
         "/help - Show this help message."
     )
