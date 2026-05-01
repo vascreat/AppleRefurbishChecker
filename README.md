@@ -8,7 +8,7 @@ Do not hardcode your bot token in source code. This project reads the token from
 
 Token Placeholder
 Use this placeholder value format for local testing setup:
-BOT_TOKEN=[8566527550:AAHWWdkZZjMDw2D3QlEM2IiMDE44xMA9DWs]
+BOT_TOKEN=[]
 
 Features
 - Create, configure, run, stop, list, and delete named tasks.
